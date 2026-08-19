@@ -1,14 +1,11 @@
-using EprPackagingDataArchive.Example.Endpoints;
-using EprPackagingDataArchive.Example.Services;
-using EprPackagingDataArchive.Config;
+using EprPackagingDataArchive.ComplianceSchemes.Endpoints;
+using EprPackagingDataArchive.Organisations.Endpoints;
+using EprPackagingDataArchive.Shared;
 using EprPackagingDataArchive.Utils;
 using EprPackagingDataArchive.Utils.Http;
-using EprPackagingDataArchive.Utils.Mongo;
 using System.Diagnostics.CodeAnalysis;
 using EprPackagingDataArchive.Utils.Logging;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using MongoDB.Driver;
-using MongoDB.Driver.Authentication.AWS;
 using Serilog;
 
 var app = BuildApp(args);
@@ -47,17 +44,22 @@ static void ConfigureServices(WebApplicationBuilder builder)
 
     services.AddProblemDetails();
     services.AddValidation();
+    services.AddOpenApi();
 
     services.AddHttpContextAccessor();
+    services.AddSingleton(TimeProvider.System);
 
     ConfigureHeaderPropagation(services, configuration);
     ConfigureHttpClients(services);
-    ConfigureMongo(services, configuration);
 
     services.AddHealthChecks();
 
-    // App services
-    services.AddSingleton<IExamplePersistence, ExamplePersistence>();
+    // Selects which adapters back the provider interfaces. Phase one registers the stubs.
+    services.AddPackagingDataProviders(configuration);
+
+    // Mongo is deliberately not registered. This service holds no data of its own yet, and the
+    // choice between MongoDB and Aurora PostgreSQL is still open. The wiring in Utils/Mongo is
+    // intact, so re-enabling it is a single ConfigureMongo call here once that decision is made.
 }
 
 [ExcludeFromCodeCoverage]
@@ -79,24 +81,9 @@ static void ConfigureHttpClients(IServiceCollection services)
 {
     services.AddTransient<ProxyHttpMessageHandler>();
 
-    // services.AddHttpClientWithTracing<IExampleClient, ExampleClient>();
-    // services.AddHttpClientWithProxy<IExternalClient, ExternalClient>();
-}
-
-[ExcludeFromCodeCoverage]
-static void ConfigureMongo(IServiceCollection services, IConfiguration configuration)
-{
-
-    MongoExtensions.Register();
-    MongoConventions.Register();
-
-    services
-        .AddOptions<MongoConfig>()
-        .Bind(configuration.GetRequiredSection("Mongo"))
-        .ValidateDataAnnotations()
-        .ValidateOnStart();
-
-    services.AddSingleton<IMongoDbClientFactory, MongoDbClientFactory>();
+    // Phase two registers the Common Data API client here. It must go through
+    // AddHttpClientWithTracingAndProxy: a plain AddHttpClient loses both the x-cdp-request-id
+    // propagation and the authenticated CDP egress proxy.
 }
 
 [ExcludeFromCodeCoverage]
@@ -112,6 +99,10 @@ static void ConfigureEndpoints(WebApplication app)
 {
     app.MapHealthChecks("/health", new HealthCheckOptions());
 
-    // Remove before deploying
-    app.MapExampleEndpoints();
+    // The contract is the deliverable in phase one, so the OpenAPI document is served in every
+    // environment rather than gated on Development. There is no data behind it yet.
+    app.MapOpenApi();
+
+    app.MapOrganisationEndpoints();
+    app.MapComplianceSchemeEndpoints();
 }
