@@ -1,3 +1,5 @@
+using EprPackagingDataArchive.CommonData;
+using EprPackagingDataArchive.CommonData.Endpoints;
 using EprPackagingDataArchive.ComplianceSchemes.Endpoints;
 using EprPackagingDataArchive.Organisations.Endpoints;
 using EprPackagingDataArchive.Shared;
@@ -57,6 +59,9 @@ static void ConfigureServices(WebApplicationBuilder builder)
     // Selects which adapters back the provider interfaces. Phase one registers the stubs.
     services.AddPackagingDataProviders(configuration);
 
+    // Proof of concept only, off unless CommonDataApi:Enabled is true.
+    services.AddCommonDataPoc(configuration);
+
     // Mongo is deliberately not registered. This service holds no data of its own yet, and the
     // choice between MongoDB and Aurora PostgreSQL is still open. The wiring in Utils/Mongo is
     // intact, so re-enabling it is a single ConfigureMongo call here once that decision is made.
@@ -105,4 +110,11 @@ static void ConfigureEndpoints(WebApplication app)
 
     app.MapOrganisationEndpoints();
     app.MapComplianceSchemeEndpoints();
+
+    // Exploratory routes onto the Azure warehouse. Not part of the /v1 contract, excluded from the
+    // OpenAPI document, and not mapped at all unless explicitly enabled.
+    if (CommonDataRegistration.IsEnabled(app.Configuration))
+    {
+        app.MapCommonDataPocEndpoints();
+    }
 }
