@@ -267,3 +267,9 @@ __pycache__/
 
 library.db
 .envrc
+
+# Local secrets. The CDP Developer API key lives here if you use a file rather
+# than an exported variable. See cdp-documentation/how-to/developer-api-key.md
+.env
+.env.*
+!.env.example
