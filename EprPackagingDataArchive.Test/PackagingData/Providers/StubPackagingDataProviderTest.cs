@@ -54,7 +54,7 @@ public class StubPackagingDataProviderTest
     public async Task Filters_lines_by_material()
     {
         var lines = await _provider.GetLinesAsync(
-            "100123", new PackagingDataQuery { Material = PackagingMaterials.Glass }, Token);
+            "100123", new PackagingDataQuery { Material = PackagingMaterials.Glass, SubmissionPeriod = "2026-H1" }, Token);
 
         var only = Assert.Single(lines);
         Assert.Equal(152.04m, only.Tonnage);

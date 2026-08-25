@@ -3,6 +3,7 @@ using EprPackagingDataArchive.Organisations.Providers;
 using EprPackagingDataArchive.PackagingData.Models;
 using EprPackagingDataArchive.PackagingData.Providers;
 using EprPackagingDataArchive.Shared;
+using EprPackagingDataArchive.Utils.Auditing;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 
@@ -35,7 +36,8 @@ public static class OrganisationEndpoints
 
         group.MapGet("/{organisationId}/packaging-data", GetPackagingData)
             .WithName("GetOrganisationPackagingData")
-            .WithSummary("List reported packaging lines for this organisation.");
+            .WithSummary("The organisation, its submissions, and the packaging rows inside each, "
+                         + "filterable by year and submission status.");
 
         group.MapGet("/{organisationId}/packaging-data/summary", GetPackagingDataSummary)
             .WithName("GetOrganisationPackagingDataSummary")
@@ -100,30 +102,49 @@ public static class OrganisationEndpoints
             : TypedResults.Ok(submission.InEnvelope(source.AsOf, source.Name));
     }
 
-    private static async Task<Results<Ok<Envelope<IReadOnlyCollection<PackagingDataLine>>>, NotFound, BadRequest<ProblemDetails>>>
+    private static async Task<Results<Ok<Envelope<PackagingDataReport>>, NotFound, BadRequest<ProblemDetails>>>
         GetPackagingData(
             [FromRoute] string organisationId,
-            [FromQuery] string? submissionPeriod,
-            [FromQuery] int? obligationYear,
-            [FromQuery] string? material,
-            [FromQuery] string? submittedBy,
-            [FromQuery] int? page,
-            [FromQuery] int? pageSize,
-            [FromServices] IOrganisationProvider organisations,
+            [FromQuery] int? year,
+            [FromQuery] string? status,
             [FromServices] IPackagingDataProvider packagingData,
             [FromServices] IDataSourceDescriptor source,
+            [FromServices] ILoggerFactory loggerFactory,
             CancellationToken cancellationToken)
     {
-        if (InvalidPeriod(submissionPeriod, out var problem)) return TypedResults.BadRequest(problem);
+        if (year is < 2020 or > 2100)
+        {
+            return TypedResults.BadRequest(new ProblemDetails
+            {
+                Title = "Invalid year",
+                Detail = $"'{year}' is not a valid submission year. Provide a four digit year, for example 2025.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
 
-        if (!await organisations.ExistsAsync(organisationId, cancellationToken)) return TypedResults.NotFound();
+        if (status is not null && !status.Equals("accepted", StringComparison.OrdinalIgnoreCase)
+                               && !status.Equals("rejected", StringComparison.OrdinalIgnoreCase))
+        {
+            return TypedResults.BadRequest(new ProblemDetails
+            {
+                Title = "Invalid status",
+                Detail = $"'{status}' is not a recognised status filter. Valid values are accepted and rejected.",
+                Status = StatusCodes.Status400BadRequest
+            });
+        }
 
-        var all = await packagingData.GetLinesAsync(
-            organisationId,
-            QueryFrom(submissionPeriod, obligationYear, material, submittedBy),
-            cancellationToken);
+        var report = await packagingData.GetReportAsync(
+            organisationId, new ReportQuery { Year = year, Status = status }, cancellationToken);
 
-        return TypedResults.Ok(Paged(all, page, pageSize, source));
+        if (report is null) return TypedResults.NotFound();
+
+        // One audit event per read, routed to the CDP audit store. A deliberate starting point for
+        // the ticket's open "Audit?" question rather than settled policy; see DECISIONS.md 7.
+        loggerFactory.CreateLogger("PackagingData.Report").Audit(
+            "Packaging data report requested for organisation {OrganisationId} (year: {Year}, status: {Status})",
+            organisationId, year, status ?? "any");
+
+        return TypedResults.Ok(report.InEnvelope(source.AsOf, source.Name));
     }
 
     private static async Task<Results<Ok<Envelope<PackagingDataSummary>>, NotFound, BadRequest<ProblemDetails>>>

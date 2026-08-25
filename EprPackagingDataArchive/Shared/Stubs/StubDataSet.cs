@@ -210,6 +210,20 @@ public static class StubDataSet
             // Deliberately false: a submission can exist before the ETL has landed it in the
             // warehouse. Callers need to be able to tell those two states apart.
             AvailableInWarehouse = false
+        },
+        new()
+        {
+            SubmissionId = "8a3b52ef-19d4-4e60-a2c8-6f90b1d43a77",
+            Type = SubmissionTypes.PackagingData,
+            SubmissionPeriod = "2025-H1",
+            ObligationYear = 2026,
+            Status = "RejectedByRegulator",
+            SubmittedAt = new DateTimeOffset(2025, 7, 30, 10, 15, 0, TimeSpan.Zero),
+            SubmittedBy = s_self100123,
+            FileName = "pom-h1-2025.csv",
+            IsResubmission = false,
+            Validation = new ValidationSummary { ErrorCount = 3, WarningCount = 5, RowCount = 2 },
+            AvailableInWarehouse = true
         }
     ];
 
@@ -219,14 +233,15 @@ public static class StubDataSet
         {
             ["9f2c8e14-3a5d-4c77-9b21-8de4f0a17c60"] = "100123",
             ["1b7d40aa-6c19-4f02-8e55-2ca9d3b6e731"] = "100123",
-            ["4e0a91c3-77bf-4d18-b6a2-5f13c8e9d024"] = "100456"
+            ["4e0a91c3-77bf-4d18-b6a2-5f13c8e9d024"] = "100456",
+            ["8a3b52ef-19d4-4e60-a2c8-6f90b1d43a77"] = "100123"
         };
 
     public static readonly IReadOnlyList<PackagingDataLine> PackagingLines =
     [
         Line("7c1f0001", "100123", "2026-H1", 2027, "SoldAsEmptyPackaging", "HouseholdConsumerWaste",
             "PrimaryPackaging", PackagingMaterials.Plastic, 310.40m, 98000, Nation.England, Nation.Scotland,
-            "Amber", "9f2c8e14-3a5d-4c77-9b21-8de4f0a17c60", s_self100123),
+            "Amber", "9f2c8e14-3a5d-4c77-9b21-8de4f0a17c60", s_self100123, subtype: "PET"),
         Line("7c1f0002", "100123", "2026-H1", 2027, "SuppliedUnderYourBrand", "HouseholdConsumerWaste",
             "PrimaryPackaging", PackagingMaterials.PaperBoard, 268.75m, 54000, Nation.England, null,
             "Green", "9f2c8e14-3a5d-4c77-9b21-8de4f0a17c60", s_self100123),
@@ -251,7 +266,16 @@ public static class StubDataSet
         // and a scheme member the same shape at the organisation endpoint.
         Line("7c1f0008", "100456", "2026-H1", 2027, "SoldAsEmptyPackaging", "HouseholdConsumerWaste",
             "PrimaryPackaging", PackagingMaterials.Plastic, 88.20m, 22000, Nation.NorthernIreland, null,
-            "Amber", "4e0a91c3-77bf-4d18-b6a2-5f13c8e9d024", s_scheme),
+            "Amber", "4e0a91c3-77bf-4d18-b6a2-5f13c8e9d024", s_scheme, subtype: "HDPE"),
+        // The rejected 2025-H1 submission: one parent row, one subsidiary row with transitional units.
+        Line("7c1f0010", "100123", "2025-H1", 2026, "SoldAsEmptyPackaging", "HouseholdConsumerWaste",
+            "PrimaryPackaging", PackagingMaterials.Plastic, 120.00m, 30000, Nation.England, null,
+            "Red", "8a3b52ef-19d4-4e60-a2c8-6f90b1d43a77", s_self100123, subtype: "PVC"),
+        Line("7c1f0011", "100123", "2025-H1", 2026, "SuppliedUnderYourBrand", "HouseholdConsumerWaste",
+            "SecondaryPackaging", PackagingMaterials.Glass, 40.50m, 9100, Nation.England, null,
+            "Amber", "8a3b52ef-19d4-4e60-a2c8-6f90b1d43a77", s_self100123,
+            transitionalUnits: 1200, subsidiaryId: "100123-S01"),
+
         Line("7c1f0009", "100456", "2026-H1", 2027, "SuppliedUnderYourBrand", "HouseholdDrinksContainers",
             "PrimaryPackaging", PackagingMaterials.Glass, 45.60m, 9800, Nation.NorthernIreland, null,
             "Green", "4e0a91c3-77bf-4d18-b6a2-5f13c8e9d024", s_scheme)
@@ -261,20 +285,23 @@ public static class StubDataSet
         string lineId, string organisationId, string period, int obligationYear, string activity,
         string packagingType, string packagingClass, string material, decimal tonnage, int? units,
         string fromNation, string? toNation, string? ramRag, string submissionId,
-        SubmitterReference submittedBy) =>
+        SubmitterReference submittedBy, string? subtype = null, int? transitionalUnits = null,
+        string? subsidiaryId = null) =>
         new()
         {
             LineId = lineId,
             OrganisationId = organisationId,
-            SubsidiaryId = null,
+            SubsidiaryId = subsidiaryId,
             SubmissionPeriod = period,
             ObligationYear = obligationYear,
             Activity = activity,
             PackagingType = packagingType,
             PackagingClass = packagingClass,
             Material = material,
+            MaterialSubtype = subtype,
             Tonnage = tonnage,
             Units = units,
+            TransitionalPackagingUnits = transitionalUnits,
             FromNation = fromNation,
             ToNation = toNation,
             RamRagRating = ramRag,

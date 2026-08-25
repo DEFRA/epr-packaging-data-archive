@@ -82,10 +82,10 @@ public class OrganisationEndpointsTest
         var response = await client.GetAsync($"/v1/organisations/{DirectProducer}/submissions", cancellationToken);
         var envelope = await response.ReadEnvelopeAsync<IReadOnlyCollection<SubmissionResponse>>(cancellationToken);
 
-        Assert.Equal(2, envelope.Data.Count);
+        Assert.Equal(3, envelope.Data.Count);
         Assert.Equal("2026-H1", envelope.Data.First().SubmissionPeriod);
         Assert.NotNull(envelope.Meta.Page);
-        Assert.Equal(2, envelope.Meta.Page.Total);
+        Assert.Equal(3, envelope.Meta.Page.Total);
     }
 
     [Fact]
@@ -152,22 +152,55 @@ public class OrganisationEndpointsTest
     }
 
     [Fact]
-    public async Task Get_packaging_data_attributes_scheme_submitted_lines_to_the_member()
+    public async Task Packaging_data_returns_the_nested_report_shape()
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new ApiTestFactory();
+        using var client = factory.CreateClient();
+
+        // Data filed BY the scheme still appears under the member the data is about.
+        var response = await client.GetAsync(
+            $"/v1/organisations/{SchemeMember}/packaging-data", cancellationToken);
+        var envelope = await response.ReadEnvelopeAsync<PackagingDataReport>(cancellationToken);
+
+        Assert.Equal(SchemeMember, envelope.Data.Organisation.OrganisationId);
+        var submission = Assert.Single(envelope.Data.Submissions);
+        Assert.Equal("2026-H1", submission.SubmissionPeriod);
+        Assert.Equal(2, submission.PackagingData.Count);
+    }
+
+    [Fact]
+    public async Task Packaging_data_filters_by_year_and_status()
     {
         var cancellationToken = TestContext.Current.CancellationToken;
         await using var factory = new ApiTestFactory();
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync(
-            $"/v1/organisations/{SchemeMember}/packaging-data?submissionPeriod=2026-H1", cancellationToken);
-        var envelope = await response.ReadEnvelopeAsync<IReadOnlyCollection<PackagingDataLine>>(cancellationToken);
+            $"/v1/organisations/{DirectProducer}/packaging-data?year=2025&status=rejected", cancellationToken);
+        var envelope = await response.ReadEnvelopeAsync<PackagingDataReport>(cancellationToken);
 
-        Assert.Equal(2, envelope.Data.Count);
-        Assert.All(envelope.Data, line =>
-        {
-            Assert.Equal(SchemeMember, line.OrganisationId);
-            Assert.Equal(SubmitterRoles.ComplianceScheme, line.SubmittedBy.Role);
-        });
+        var submission = Assert.Single(envelope.Data.Submissions);
+        Assert.Equal("RejectedByRegulator", submission.Status);
+        Assert.Contains(submission.PackagingData, r => r.SubsidiaryId == "100123-S01");
+    }
+
+    [Theory]
+    [InlineData("year=1999", "Invalid year")]
+    [InlineData("status=banana", "Invalid status")]
+    public async Task Packaging_data_rejects_invalid_filters_with_problem_details(string query, string expectedTitle)
+    {
+        var cancellationToken = TestContext.Current.CancellationToken;
+        await using var factory = new ApiTestFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.GetAsync(
+            $"/v1/organisations/{DirectProducer}/packaging-data?{query}", cancellationToken);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var problem = await response.Content.ReadFromJsonAsync<ProblemDetails>(ApiTestFactory.Json, cancellationToken);
+        Assert.NotNull(problem);
+        Assert.Equal(expectedTitle, problem.Title);
     }
 
     [Fact]
@@ -177,20 +210,22 @@ public class OrganisationEndpointsTest
         await using var factory = new ApiTestFactory();
         using var client = factory.CreateClient();
 
-        var lines = await (await client.GetAsync(
-                $"/v1/organisations/{DirectProducer}/packaging-data?submissionPeriod=2026-H1&pageSize=500",
+        // 100123's only 2026 submission is 2026-H1, so the report and summary cover the same rows.
+        var report = await (await client.GetAsync(
+                $"/v1/organisations/{DirectProducer}/packaging-data?year=2026",
                 cancellationToken))
-            .ReadEnvelopeAsync<IReadOnlyCollection<PackagingDataLine>>(cancellationToken);
+            .ReadEnvelopeAsync<PackagingDataReport>(cancellationToken);
 
         var summary = await (await client.GetAsync(
                 $"/v1/organisations/{DirectProducer}/packaging-data/summary?submissionPeriod=2026-H1",
                 cancellationToken))
             .ReadEnvelopeAsync<PackagingDataSummary>(cancellationToken);
 
-        // The guarantee a real implementation must also make: fetching the lines and adding them up
-        // gives the summary figure. Hardcoded fixture totals would quietly break this.
-        Assert.Equal(lines.Data.Sum(l => l.Tonnage), summary.Data.Totals.Tonnage);
-        Assert.Equal(lines.Data.Count, summary.Data.Totals.LineCount);
+        // The guarantee a real implementation must also make: adding up the nested rows gives the
+        // summary figure. Hardcoded fixture totals would quietly break this.
+        var rows = report.Data.Submissions.SelectMany(s => s.PackagingData).ToList();
+        Assert.Equal(rows.Sum(r => r.PackagingMaterialWeight), summary.Data.Totals.Tonnage);
+        Assert.Equal(rows.Count, summary.Data.Totals.LineCount);
         Assert.Equal(842.19m, summary.Data.Totals.Tonnage);
         Assert.Equal(PackagingMaterials.Plastic, summary.Data.ByMaterial.First().Key);
     }
@@ -203,7 +238,7 @@ public class OrganisationEndpointsTest
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync(
-            $"/v1/organisations/{DirectProducer}/packaging-data?submissionPeriod=Q1-2026", cancellationToken);
+            $"/v1/organisations/{DirectProducer}/packaging-data/summary?submissionPeriod=Q1-2026", cancellationToken);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
 
@@ -221,8 +256,8 @@ public class OrganisationEndpointsTest
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync(
-            $"/v1/organisations/{DirectProducer}/packaging-data?pageSize=99999", cancellationToken);
-        var envelope = await response.ReadEnvelopeAsync<IReadOnlyCollection<PackagingDataLine>>(cancellationToken);
+            $"/v1/organisations/{DirectProducer}/submissions?pageSize=99999", cancellationToken);
+        var envelope = await response.ReadEnvelopeAsync<IReadOnlyCollection<SubmissionResponse>>(cancellationToken);
 
         Assert.NotNull(envelope.Meta.Page);
         Assert.Equal(PageRequest.MaxSize, envelope.Meta.Page.Size);

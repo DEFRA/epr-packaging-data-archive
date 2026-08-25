@@ -76,7 +76,7 @@ public class StubOrganisationProviderTest
     {
         var submissions = await _provider.GetSubmissionsAsync("100123", new SubmissionQuery(), Token);
 
-        Assert.Equal(2, submissions.Count);
+        Assert.Equal(3, submissions.Count);
         Assert.True(submissions.First().SubmittedAt > submissions.Last().SubmittedAt);
     }
 
@@ -86,8 +86,9 @@ public class StubOrganisationProviderTest
         var submissions = await _provider.GetSubmissionsAsync(
             "100123", new SubmissionQuery { ObligationYear = 2026 }, Token);
 
-        var only = Assert.Single(submissions);
-        Assert.Equal("2025-H2", only.SubmissionPeriod);
+        // Both 2025 periods carry obligation year 2026: the accepted H2 and the rejected H1.
+        Assert.Equal(2, submissions.Count);
+        Assert.All(submissions, s => Assert.StartsWith("2025-", s.SubmissionPeriod));
     }
 
     [Fact]
