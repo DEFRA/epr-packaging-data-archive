@@ -19,7 +19,7 @@ public static class Nation
         ["EN"] = England,
         ["NI"] = NorthernIreland,
         ["SC"] = Scotland,
-        ["WS"] = Wales
+        ["WS"] = Scotland // DEMO-BREAK: deliberate, to show the pipeline failing
     };
 
     /// <summary>
