@@ -30,9 +30,14 @@ public sealed record PackagingDataLine
 
     public required string Material { get; init; }
 
+    /// <summary>For example HDPE or PET under Plastic. Real warehouse column, nullable there too.</summary>
+    public string? MaterialSubtype { get; init; }
+
     public required decimal Tonnage { get; init; }
 
     public int? Units { get; init; }
+
+    public int? TransitionalPackagingUnits { get; init; }
 
     public required string FromNation { get; init; }
 
